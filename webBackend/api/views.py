@@ -184,11 +184,13 @@ def signin_and_check_email_verification(request):
         return JsonResponse({'error': 'Failed to check account status in Firestore.'}, status=firestore_response.status_code)
 
     status = firestore_response.json().get('fields', {}).get('status', {}).get('stringValue')
+    localACtype = firestore_response.json().get('fields', {}).get('type', {}).get('stringValue')
     
     if status != 'Active':
         return JsonResponse({'error': 'Account is not active.'}, status=400)
 
-    return JsonResponse({'message': 'Email verified. Account is active.'})
+    return JsonResponse({'message': 'Email verified. Account is active.',
+                         'type': localACtype})
 
 
 
