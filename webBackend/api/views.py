@@ -1,6 +1,7 @@
 import os
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
+import asyncio
 import requests
 import json
 
@@ -98,3 +99,130 @@ def signup_and_send_data(request):
 
     else:
         return JsonResponse({'error': 'Failed to sign up.'}, status=signup_response.status_code)
+
+
+@csrf_exempt
+def signin_and_check_email_verification(request):
+    api_key = os.environ.get('FIREBASE_API_KEY')
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not (api_key and project_id):
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Receive email and password from request body
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+        password = data.get('password')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+
+    if not (email and password):
+        return JsonResponse({'error': 'Email or password missing in request.'}, status=400)
+
+    # Sign in user
+    signin_data = {
+        "email": email,
+        "password": password,
+        "returnSecureToken": True
+    }
+
+    signin_response = requests.post(
+        f'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}',
+        headers={'Content-Type': 'application/json'},
+        data=json.dumps(signin_data)
+    )
+
+    if not signin_response.ok:
+        return JsonResponse({'error': 'Failed to sign in.'}, status=signin_response.status_code)
+
+    user_id_token = signin_response.json().get('idToken')
+    doc_ID = signin_response.json().get('localId')
+
+    # Check if email is verified
+    check_verification_data = {
+        "idToken": user_id_token
+    }
+
+    check_verification_response = requests.post(
+        f'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={api_key}',
+        headers={'Content-Type': 'application/json'},
+        data=json.dumps(check_verification_data)
+    )
+
+    if not check_verification_response.ok:
+        return JsonResponse({'error': 'Failed to check email verification.'}, status=check_verification_response.status_code)
+
+    user_info = check_verification_response.json().get('users', [])[0]
+    email_verified = user_info.get('emailVerified', False)
+
+    if not email_verified:
+        # Send email verification
+        email_verification_data = {
+            "requestType": "VERIFY_EMAIL",
+            "idToken": user_id_token
+        }
+
+        email_verification_response = requests.post(
+            f'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps(email_verification_data)
+        )
+
+        if not email_verification_response.ok:
+            return JsonResponse({'error': 'Failed to send email verification.'}, status=email_verification_response.status_code)
+
+        return JsonResponse({'message': 'Email not verified. Verification email sent.'})
+
+        # -----------------------
+    # Check status of the account in Firestore
+    firestore_response = requests.get(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser/{doc_ID}',
+        headers={'Authorization': f'Bearer {user_id_token}'}
+    )
+
+    if not firestore_response.ok:
+        return JsonResponse({'error': 'Failed to check account status in Firestore.'}, status=firestore_response.status_code)
+
+    status = firestore_response.json().get('fields', {}).get('status', {}).get('stringValue')
+    
+    if status != 'Active':
+        return JsonResponse({'error': 'Account is not active.'}, status=400)
+
+    return JsonResponse({'message': 'Email verified. Account is active.'})
+
+
+
+@csrf_exempt
+def reset_password(request):
+    api_key = os.environ.get('FIREBASE_API_KEY')
+
+    if not api_key:
+        return JsonResponse({'error': 'Firebase API key not configured.'}, status=500)
+
+    # Receive email from request body
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+
+    if not email:
+        return JsonResponse({'error': 'Email missing in request.'}, status=400)
+
+    # Reset password
+    reset_data = {
+        "requestType": "PASSWORD_RESET",
+        "email": email
+    }
+
+    reset_response = requests.post(
+        f'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}',
+        headers={'Content-Type': 'application/json'},
+        json=reset_data
+    )
+
+    if not reset_response.ok:
+        return JsonResponse({'error': 'Failed to reset password.'}, status=reset_response.status_code)
+
+    return JsonResponse({'message': 'Password reset email sent.'})
