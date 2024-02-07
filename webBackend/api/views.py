@@ -5,6 +5,10 @@ import asyncio
 import requests
 import json
 
+
+doc_ID = None
+user_id_token = None
+
 @csrf_exempt
 def signup_and_send_data(request):
     api_key = os.environ.get('FIREBASE_API_KEY')
@@ -103,6 +107,8 @@ def signup_and_send_data(request):
 
 @csrf_exempt
 def signin_and_check_email_verification(request):
+    global doc_ID
+    global user_id_token
     api_key = os.environ.get('FIREBASE_API_KEY')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
@@ -138,7 +144,9 @@ def signin_and_check_email_verification(request):
 
     user_id_token = signin_response.json().get('idToken')
     doc_ID = signin_response.json().get('localId')
-
+    
+    print(user_id_token)
+    print(doc_ID)
     # Check if email is verified
     check_verification_data = {
         "idToken": user_id_token
@@ -226,3 +234,42 @@ def reset_password(request):
         return JsonResponse({'error': 'Failed to reset password.'}, status=reset_response.status_code)
 
     return JsonResponse({'message': 'Password reset email sent.'})
+
+
+@csrf_exempt
+def delete_account(request):
+    global doc_ID
+    global user_id_token
+    api_key = os.environ.get('FIREBASE_API_KEY')
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not (api_key and project_id):
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    print(doc_ID)
+    print(user_id_token)
+    # Delete user account from Firebase Authentication
+    auth_delete_data = {
+        "idToken": user_id_token
+    }
+
+    auth_delete_response = requests.post(
+        f'https://identitytoolkit.googleapis.com/v1/accounts:delete?key={api_key}',
+        headers={'Content-Type': 'application/json'},
+        json=auth_delete_data
+    )
+
+    if not auth_delete_response.ok:
+        return JsonResponse({'error': 'Failed to delete account from Firebase Authentication.'}, status=auth_delete_response.status_code)
+
+    # Delete document from Firestore
+    firestore_delete_response = requests.delete(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser/{doc_ID}',
+        headers={'Content-Type': 'application/json'}
+    )
+
+    if not firestore_delete_response.ok:
+        return JsonResponse({'error': 'Failed to delete document from Firestore.'}, status=firestore_delete_response.status_code)
+
+    return JsonResponse({'message': 'Account and document deleted successfully.'})
+
