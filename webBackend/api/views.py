@@ -17,8 +17,6 @@ def signup_and_send_data(request):
     if not (api_key and project_id):
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
 
-    print(request.POST.get('email'))
-
     # Receive email and password from request body
     try:
         data = json.loads(request.body)
@@ -51,7 +49,6 @@ def signup_and_send_data(request):
         headers={'Content-Type': 'application/json'},
         data=json.dumps(signup_data)
     )
-    print(signup_response)
 
     # Check if signup was successful
     if signup_response.status_code == 200:
@@ -81,9 +78,7 @@ def signup_and_send_data(request):
             },
             data=json.dumps(firestore_data)
         )
-        
-        print(firestore_response)   
-        
+                
         # Data for email verification
         email_verification_data = {
             "requestType": "VERIFY_EMAIL",
@@ -96,8 +91,6 @@ def signup_and_send_data(request):
             headers={'Content-Type': 'application/json'},
             data=json.dumps(email_verification_data)
         )
-
-        print(email_verification_response)
 
         return JsonResponse({'message': 'Successfully signed up and sent data.'})
 
@@ -145,8 +138,6 @@ def signin_and_check_email_verification(request):
     user_id_token = signin_response.json().get('idToken')
     doc_ID = signin_response.json().get('localId')
     
-    print(user_id_token)
-    print(doc_ID)
     # Check if email is verified
     check_verification_data = {
         "idToken": user_id_token
@@ -246,8 +237,6 @@ def delete_account(request):
     if not (api_key and project_id):
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
 
-    print(doc_ID)
-    print(user_id_token)
     # Delete user account from Firebase Authentication
     auth_delete_data = {
         "idToken": user_id_token
