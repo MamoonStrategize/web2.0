@@ -6,6 +6,7 @@ import json
 from django.contrib.sessions.models import Session
 import secrets
 from operator import itemgetter
+from datetime import datetime, timedelta
 
 
 @csrf_exempt
@@ -647,7 +648,7 @@ def invitation_teacher(request):
             return JsonResponse({'error': 'Failed to invite.'}, status=signup_response.status_code)
 
 @csrf_exempt
-def get_student_data_cohort(request):
+def get_teacher_cohort(request):
     try:
         data = json.loads(request.body)
         cohort = data.get('cohort')
@@ -731,6 +732,7 @@ def get_student_data_country(request):
     try:
         data = json.loads(request.body)
         country = data.get('country')
+        time_filter = data.get('time_filter')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
     
@@ -738,6 +740,22 @@ def get_student_data_country(request):
 
     if not project_id:
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Determine the start date based on the selected time filter
+    if time_filter == 'today':
+        start_date = datetime.utcnow() - timedelta(days=1)
+    elif time_filter == '1_month':
+        start_date = datetime.utcnow() - timedelta(days=30)
+    elif time_filter == '12_months':
+        start_date = datetime.utcnow() - timedelta(days=365)
+    else:
+        # Handle invalid time filter
+        return JsonResponse({'error': 'Invalid time filter.'}, status=400)
+
+    # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
+    start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    print(start_date)
+    print(start_date_iso)
 
     firestore_update_data = {
         "structuredQuery": {
@@ -782,28 +800,32 @@ def get_student_data_country(request):
         email = fields["email"]["stringValue"]
         status = fields["status"]["stringValue"]
         lastname = fields["lastname"]["stringValue"]
+        updateTime = document["updateTime"]
+
+        update_datetime = datetime.strptime(updateTime, '%Y-%m-%dT%H:%M:%S.%fZ')
 
         # Extract the document ID from the name field
         document_id = name.split('/')[-1]
-
+        
+        if update_datetime >= start_date:
         # Create a new dictionary with the extracted fields
-        transformed_item = {
-            "std_id": document_id,
-            "country": country,
-            "marketCap": marketCap,
-            "firstname": firstname,
-            "cohort": cohort,
-            "institute": institute,
-            "type": type_,
-            "tracks": tracks,
-            "email": email,
-            "status": status,
-            "lastname": lastname
-        }
+            transformed_item = {
+                "std_id": document_id,
+                "country": country,
+                "marketCap": marketCap,
+                "firstname": firstname,
+                "cohort": cohort,
+                "institute": institute,
+                "type": type_,
+                "tracks": tracks,
+                "email": email,
+                "status": status,
+                "lastname": lastname
+            }
 
-        # Append the transformed item to the list
-        transformed_data.append(transformed_item)
-        sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
+            # Append the transformed item to the list
+            transformed_data.append(transformed_item)
+    sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
     return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
 
 @csrf_exempt
@@ -811,6 +833,7 @@ def get_student_data_institute(request):
     try:
         data = json.loads(request.body)
         institute = data.get('institute')
+        time_filter = data.get('time_filter')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
     
@@ -818,6 +841,22 @@ def get_student_data_institute(request):
 
     if not project_id:
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Determine the start date based on the selected time filter
+    if time_filter == 'today':
+        start_date = datetime.utcnow() - timedelta(days=1)
+    elif time_filter == '1_month':
+        start_date = datetime.utcnow() - timedelta(days=30)
+    elif time_filter == '12_months':
+        start_date = datetime.utcnow() - timedelta(days=365)
+    else:
+        # Handle invalid time filter
+        return JsonResponse({'error': 'Invalid time filter.'}, status=400)
+
+    # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
+    start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    print(start_date)
+    print(start_date_iso)
 
     firestore_update_data = {
         "structuredQuery": {
@@ -862,37 +901,62 @@ def get_student_data_institute(request):
         email = fields["email"]["stringValue"]
         status = fields["status"]["stringValue"]
         lastname = fields["lastname"]["stringValue"]
+        updateTime = document["updateTime"]
 
+        update_datetime = datetime.strptime(updateTime, '%Y-%m-%dT%H:%M:%S.%fZ')
         # Extract the document ID from the name field
         document_id = name.split('/')[-1]
+        
+        if update_datetime >= start_date:
+            # Create a new dictionary with the extracted fields
+            transformed_item = {
+                "std_id": document_id,
+                "country": country,
+                "marketCap": marketCap,
+                "firstname": firstname,
+                "cohort": cohort,
+                "institute": institute,
+                "type": type_,
+                "tracks": tracks,
+                "email": email,
+                "status": status,
+                "lastname": lastname
+            }
 
-        # Create a new dictionary with the extracted fields
-        transformed_item = {
-            "std_id": document_id,
-            "country": country,
-            "marketCap": marketCap,
-            "firstname": firstname,
-            "cohort": cohort,
-            "institute": institute,
-            "type": type_,
-            "tracks": tracks,
-            "email": email,
-            "status": status,
-            "lastname": lastname
-        }
-
-        # Append the transformed item to the list
-        transformed_data.append(transformed_item)
-        sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
+            # Append the transformed item to the list
+            transformed_data.append(transformed_item)
+    sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
     return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
 
 @csrf_exempt
 def get_student_data_international(request):
-
+    try:
+        data = json.loads(request.body)
+        time_filter = data.get('time_filter')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+    
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Determine the start date based on the selected time filter
+    if time_filter == 'today':
+        start_date = datetime.utcnow() - timedelta(days=1)
+    elif time_filter == '1_month':
+        start_date = datetime.utcnow() - timedelta(days=30)
+    elif time_filter == '12_months':
+        start_date = datetime.utcnow() - timedelta(days=365)
+    else:
+        # Handle invalid time filter
+        return JsonResponse({'error': 'Invalid time filter.'}, status=400)
+
+    # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
+    start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    print(start_date)
+    print(start_date_iso)
+
 
     firestore_query_response = requests.get(
         f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser',
@@ -923,22 +987,128 @@ def get_student_data_international(request):
         email = fields.get("email", {}).get("stringValue", "")
         status = fields.get("status", {}).get("stringValue", "")
         lastname = fields.get("lastname", {}).get("stringValue", "")
+        updateTime = item.get("updateTime", {})
 
-        transformed_item = {
-            "std_id": document_id,
-            "country": country,
-            "marketCap": marketCap,
-            "firstname": firstname,
-            "cohort": cohort,
-            "institute": institute,
-            "type": type_,
-            "tracks": tracks,
-            "email": email,
-            "status": status,
-            "lastname": lastname
-        }
+        update_datetime = datetime.strptime(updateTime, '%Y-%m-%dT%H:%M:%S.%fZ')
 
-        # Append the transformed item to the list
-        transformed_data.append(transformed_item)
-        sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
+        if update_datetime >= start_date:
+            transformed_item = {
+                "std_id": document_id,
+                "country": country,
+                "marketCap": marketCap,
+                "firstname": firstname,
+                "cohort": cohort,
+                "institute": institute,
+                "type": type_,
+                "tracks": tracks,
+                "email": email,
+                "status": status,
+                "lastname": lastname
+            }
+
+            # Append the transformed item to the list
+            transformed_data.append(transformed_item)
+    sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
     return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
+
+@csrf_exempt
+def get_student_data_cohort(request):
+    try:
+        data = json.loads(request.body)
+        cohort = data.get('cohort')
+        time_filter = data.get('time_filter')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+    
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not project_id:
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Determine the start date based on the selected time filter
+    if time_filter == 'today':
+        start_date = datetime.utcnow() - timedelta(days=1)
+    elif time_filter == '1_month':
+        start_date = datetime.utcnow() - timedelta(days=30)
+    elif time_filter == '12_months':
+        start_date = datetime.utcnow() - timedelta(days=365)
+    else:
+        # Handle invalid time filter
+        return JsonResponse({'error': 'Invalid time filter.'}, status=400)
+
+    # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
+    start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+    print(start_date)
+    print(start_date_iso)
+
+    firestore_update_data = {
+        "structuredQuery": {
+            "from": [{"collectionId": "regUser"}],
+            "where": {
+                "fieldFilter": {
+                    "field": {"fieldPath": "cohort"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": cohort}
+                }
+            }
+        }
+    }
+
+    firestore_query_response = requests.post(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents:runQuery',
+        headers={'Content-Type': 'application/json'},
+        json=firestore_update_data
+    )
+
+    # Check the type of the response
+    if firestore_query_response.status_code != 200:
+        return JsonResponse({'error': f'Failed to retrieve student data: {firestore_query_response.text}'}, status=firestore_query_response.status_code)
+
+    # Assuming the response is JSON, you can parse it as follows
+    response_data = firestore_query_response.json()
+    transformed_data = []
+
+    # Iterate over each item in the response data
+    for item in response_data:
+        # Extract the relevant fields
+        document = item["document"]
+        name = document["name"]
+        fields = document["fields"]
+        country = fields["country"]["stringValue"]
+        marketCap = int(fields["marketCap"]["integerValue"])
+        firstname = fields["firstname"]["stringValue"]
+        cohort = fields["cohort"]["stringValue"]
+        institute = fields["institute"]["stringValue"]
+        type_ = fields["type"]["stringValue"]
+        tracks = int(fields["tracks"]["integerValue"])
+        email = fields["email"]["stringValue"]
+        status = fields["status"]["stringValue"]
+        lastname = fields["lastname"]["stringValue"]
+        updateTime = document["updateTime"]
+
+        update_datetime = datetime.strptime(updateTime, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+        # Extract the document ID from the name field
+        document_id = name.split('/')[-1]
+        
+        if update_datetime >= start_date:
+        # Create a new dictionary with the extracted fields
+            transformed_item = {
+                "std_id": document_id,
+                "country": country,
+                "marketCap": marketCap,
+                "firstname": firstname,
+                "cohort": cohort,
+                "institute": institute,
+                "type": type_,
+                "tracks": tracks,
+                "email": email,
+                "status": status,
+                "lastname": lastname
+            }
+
+            # Append the transformed item to the list
+            transformed_data.append(transformed_item)
+    sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
+    return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
+
