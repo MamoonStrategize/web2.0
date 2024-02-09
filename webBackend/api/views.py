@@ -488,3 +488,50 @@ def get_all_cohorts(request):
         cohort_counts.append(str(cohort_count))
 
     return JsonResponse({'cohort': ','.join(existing_cohorts), 'entries': ','.join(cohort_counts)})
+
+@csrf_exempt
+def suspend_student(request):
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not project_id:
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Receive newStatis and studentID from request body
+    try:
+        data = json.loads(request.body)
+        newStatus = data.get('status')
+        studentID = data.get('id_new')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+
+    if not (newStatus and studentID):
+        return JsonResponse({'error': 'Email or password missing in request.'}, status=400)
+
+    firestore_response_get = requests.get(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser/{studentID}',
+        headers={'Content-Type': 'application/json'}
+        )
+        # Handle response from Firestore API
+    if firestore_response_get.ok:
+        # Extract existing data and update status
+        print(firestore_response_get.json())
+        existing_data = firestore_response_get.json().get('fields', {})
+        existing_data['status'] = {'stringValue': newStatus}
+
+        # Prepare data for update
+        update_data = {'fields': existing_data}
+
+        # Make request to Firestore API
+        firestore_response = requests.patch(
+            f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser/{studentID}',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps(update_data)
+        )
+                
+        if firestore_response.ok:
+            return JsonResponse({'message': 'Successfully suspended student'})
+        else:
+            return JsonResponse({'error': 'Failed to suspend student.'}, status=firestore_response.status_code)
+    else:
+        return JsonResponse({'error': 'Failed to fetch student data from Firestore.'}, status=firestore_response_get.status_code)
+    
