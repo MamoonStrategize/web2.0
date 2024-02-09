@@ -1,13 +1,11 @@
 import os
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-import asyncio
 import requests
 import json
+from django.contrib.sessions.models import Session
+import secrets
 
-
-doc_ID = None
-user_id_token = None
 
 @csrf_exempt
 def signup_and_send_data(request):
@@ -100,8 +98,6 @@ def signup_and_send_data(request):
 
 @csrf_exempt
 def signin_and_check_email_verification(request):
-    global doc_ID
-    global user_id_token
     api_key = os.environ.get('FIREBASE_API_KEY')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
@@ -134,6 +130,15 @@ def signin_and_check_email_verification(request):
 
     if not signin_response.ok:
         return JsonResponse({'error': 'Failed to sign in.'}, status=signin_response.status_code)
+
+    # Create a new session or get the existing session
+    session_key = request.session.session_key
+    if not session_key:
+        request.session.save()
+
+    # Assign values to the session
+    request.session['user_id_token'] = signin_response.json().get('idToken')
+    request.session['doc_ID'] = signin_response.json().get('localId')
 
     user_id_token = signin_response.json().get('idToken')
     doc_ID = signin_response.json().get('localId')
@@ -231,13 +236,17 @@ def reset_password(request):
 
 @csrf_exempt
 def delete_account(request):
-    global doc_ID
-    global user_id_token
     api_key = os.environ.get('FIREBASE_API_KEY')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not (api_key and project_id):
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    user_id_token = request.session.get('user_id_token')
+    doc_ID = request.session.get('doc_ID')
+
+    if not (user_id_token and doc_ID):
+        return JsonResponse({'error': 'Missing session data.'}, status=400)
 
     # Delete user account from Firebase Authentication
     auth_delete_data = {
@@ -264,3 +273,164 @@ def delete_account(request):
 
     return JsonResponse({'message': 'Account and document deleted successfully.'})
 
+
+@csrf_exempt
+def add_cohort(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+
+    user_id_token = request.session.get('user_id_token')
+    doc_ID = request.session.get('doc_ID')
+
+    if not (user_id_token and doc_ID):
+        return JsonResponse({'error': 'Missing session data.'}, status=400)
+
+    api_key = os.environ.get('FIREBASE_API_KEY')
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not (api_key and project_id):
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    # Keep generating new cohort numbers until one doesn't exist
+    while True:
+        cohort_number = generate_cohort_number()
+
+        # Check if cohort number already exists
+        firestore_get_response = requests.get(
+            f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort',
+            headers={'Content-Type': 'application/json'}
+        )
+
+        if not firestore_get_response.ok:
+            return JsonResponse({'error': 'Failed to fetch document from Firestore.'}, status=firestore_get_response.status_code)
+
+        user_data = firestore_get_response.json()
+        cohort_exists = False
+        for document in user_data.get('documents', []):
+            cohort_numbers = document.get('fields', {}).get('cohort', {}).get('stringValue', '').split(',')
+            if cohort_number in cohort_numbers:
+                cohort_exists = True
+                break
+
+        if not cohort_exists:
+            break
+
+    # Get existing cohort numbers from Firestore
+    firestore_get_response = requests.get(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort/{doc_ID}',
+        headers={'Content-Type': 'application/json'}
+    )
+    
+    
+    if firestore_get_response.status_code == 404:
+        # Document not found, generate a new cohort number
+        # Update document in Firestore
+        firestore_update_data = {
+            "fields": {
+                "cohort": {
+                    "stringValue": cohort_number
+                }
+            }
+        }
+
+        firestore_update_response = requests.post(
+                f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort?documentId={doc_ID}',
+                headers={'Content-Type': 'application/json'},
+                json=firestore_update_data
+            )
+
+        if not firestore_update_response.ok:
+            return JsonResponse({'error': 'Failed to create document in Firestore.'}, status=firestore_update_response.status_code)
+
+        return JsonResponse({'message': 'Document Created & Cohort number added successfully.'})
+    elif not firestore_get_response.ok:
+        # Other error occurred while fetching document
+        return JsonResponse({'error': 'Failed to fetch document from Firestore.'}, status=firestore_get_response.status_code)
+    else:
+        # Document found, extract existing cohort numbers
+        existing_cohorts = firestore_get_response.json().get('fields', {}).get('cohort', {}).get('stringValue', '')
+        # Append new cohort number after existing ones
+        new_cohorts = ','.join([existing_cohorts, cohort_number]) if existing_cohorts else cohort_number
+
+        # Update document in Firestore
+        firestore_update_data = {
+            "fields": {
+                "cohort": {
+                    "stringValue": new_cohorts
+                }
+            }
+        }
+
+        firestore_update_response = requests.patch(
+            f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort/{doc_ID}',
+            headers={'Content-Type': 'application/json'},
+            json=firestore_update_data
+        )
+
+        if not firestore_update_response.ok:
+            return JsonResponse({'error': 'Failed to update document in Firestore.'}, status=firestore_update_response.status_code)
+
+        return JsonResponse({'message': 'Cohort number added successfully.'})
+
+def generate_cohort_number():
+    return ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') for _ in range(10))
+
+@csrf_exempt
+def remove_cohort(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
+
+    user_id_token = request.session.get('user_id_token')
+    doc_ID = request.session.get('doc_ID')
+
+    if not (user_id_token and doc_ID):
+        return JsonResponse({'error': 'Missing session data.'}, status=400)
+
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not project_id:
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    try:
+        data = json.loads(request.body)
+        cohort_to_remove = data.get('cohort_to_remove')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Cohort to remove not provided.'}, status=400)
+
+    # Get existing cohort numbers from Firestore
+    firestore_get_response = requests.get(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort/{doc_ID}',
+        headers={'Content-Type': 'application/json'}
+    )
+
+    if not firestore_get_response.ok:
+        return JsonResponse({'error': 'Failed to fetch document from Firestore.'}, status=firestore_get_response.status_code)
+
+    existing_cohorts_data = firestore_get_response.json()
+    existing_cohorts = existing_cohorts_data.get('fields', {}).get('cohort', {}).get('stringValue', '').split(',')
+
+    if cohort_to_remove not in existing_cohorts:
+        return JsonResponse({'error': 'Cohort to remove not found in existing cohorts.'}, status=400)
+
+    # Remove the cohort to be removed
+    existing_cohorts.remove(cohort_to_remove)
+
+    # Update document in Firestore with modified cohort data
+    firestore_update_data = {
+        "fields": {
+            "cohort": {
+                "stringValue": ','.join(existing_cohorts)
+            }
+        }
+    }
+
+    firestore_update_response = requests.patch(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/cohort/{doc_ID}',
+        headers={'Content-Type': 'application/json'},
+        json=firestore_update_data
+    )
+
+    if not firestore_update_response.ok:
+        return JsonResponse({'error': 'Failed to update document in Firestore.'}, status=firestore_update_response.status_code)
+
+    return JsonResponse({'message': 'Cohort removed successfully.'})
