@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import signup_and_send_data, signin_and_check_email_verification, reset_password, delete_account, add_cohort, remove_cohort, get_all_cohorts, suspend_student, invitation_teacher
+from .views import signup_and_send_data, signin_and_check_email_verification, reset_password, delete_account, add_cohort, remove_cohort, get_all_cohorts, suspend_student, invitation_teacher, get_student_data_cohort
 
 urlpatterns = [
     path('signup_and_send_data/', signup_and_send_data, name='signup_and_send_data'),
@@ -11,4 +11,5 @@ urlpatterns = [
     path('get_all_cohorts/', get_all_cohorts, name='get_all_cohorts'),
     path('suspend_student/', suspend_student, name='suspend_student'),
     path('invitation_teacher/', invitation_teacher, name='invitation_teacher'),
+    path('get_student_data_cohort/', get_student_data_cohort, name='get_student_data_cohort'),
 ]

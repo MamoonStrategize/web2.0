@@ -5,6 +5,7 @@ import requests
 import json
 from django.contrib.sessions.models import Session
 import secrets
+from operator import itemgetter
 
 
 @csrf_exempt
@@ -644,3 +645,83 @@ def invitation_teacher(request):
             return JsonResponse({'message': 'Successfully signed up and sent data : invitation: rest'})
         else:
             return JsonResponse({'error': 'Failed to invite.'}, status=signup_response.status_code)
+
+@csrf_exempt
+def get_student_data_cohort(request):
+    try:
+        data = json.loads(request.body)
+        cohort = data.get('cohort')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+    
+    project_id = os.environ.get('FIREBASE_PROJECT_ID')
+
+    if not project_id:
+        return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
+
+    firestore_update_data = {
+        "structuredQuery": {
+            "from": [{"collectionId": "regUser"}],
+            "where": {
+                "fieldFilter": {
+                    "field": {"fieldPath": "cohort"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": cohort}
+                }
+            }
+        }
+    }
+
+    firestore_query_response = requests.post(
+        f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents:runQuery',
+        headers={'Content-Type': 'application/json'},
+        json=firestore_update_data
+    )
+
+    # Check the type of the response
+    if firestore_query_response.status_code != 200:
+        return JsonResponse({'error': f'Failed to retrieve student data: {firestore_query_response.text}'}, status=firestore_query_response.status_code)
+
+    # Assuming the response is JSON, you can parse it as follows
+    response_data = firestore_query_response.json()
+    transformed_data = []
+
+    # Iterate over each item in the response data
+    for item in response_data:
+        # Extract the relevant fields
+        document = item["document"]
+        name = document["name"]
+        fields = document["fields"]
+        country = fields["country"]["stringValue"]
+        marketCap = int(fields["marketCap"]["integerValue"])
+        firstname = fields["firstname"]["stringValue"]
+        cohort = fields["cohort"]["stringValue"]
+        institute = fields["institute"]["stringValue"]
+        type_ = fields["type"]["stringValue"]
+        tracks = int(fields["tracks"]["integerValue"])
+        email = fields["email"]["stringValue"]
+        status = fields["status"]["stringValue"]
+        lastname = fields["lastname"]["stringValue"]
+
+        # Extract the document ID from the name field
+        document_id = name.split('/')[-1]
+
+        # Create a new dictionary with the extracted fields
+        transformed_item = {
+            "std_id": document_id,
+            "country": country,
+            "marketCap": marketCap,
+            "firstname": firstname,
+            "cohort": cohort,
+            "institute": institute,
+            "type": type_,
+            "tracks": tracks,
+            "email": email,
+            "status": status,
+            "lastname": lastname
+        }
+
+        # Append the transformed item to the list
+        transformed_data.append(transformed_item)
+        sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
+    return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
