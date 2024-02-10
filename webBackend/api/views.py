@@ -92,10 +92,10 @@ def signup_and_send_data(request):
             data=json.dumps(email_verification_data)
         )
 
-        return JsonResponse({'message': 'Successfully signed up and sent data.'})
+        return JsonResponse({'message': 'Verification email sent. Please verify your email.', 'status_code': signup_response.status_code })
 
     else:
-        return JsonResponse({'error': 'Failed to sign up.'}, status=signup_response.status_code)
+        return JsonResponse({'message': 'Email already exists.', 'status': signup_response.json()["error"]["message"], 'status_code': signup_response.status_code })
 
 @csrf_exempt
 def signin_and_check_email_verification(request):
@@ -130,7 +130,7 @@ def signin_and_check_email_verification(request):
     )
 
     if not signin_response.ok:
-        return JsonResponse({'error': 'Failed to sign in.'}, status=signin_response.status_code)
+        return JsonResponse({'message': 'Invalid email or password.', 'status': signin_response.json()["error"]["message"], "status_code": signin_response.status_code})
 
     # Create a new session or get the existing session
     session_key = request.session.session_key
@@ -177,7 +177,7 @@ def signin_and_check_email_verification(request):
         if not email_verification_response.ok:
             return JsonResponse({'error': 'Failed to send email verification.'}, status=email_verification_response.status_code)
 
-        return JsonResponse({'message': 'Email not verified. Verification email sent.'})
+        return JsonResponse({'message': 'Your email is not varified. New varification email sent.','email_verified':check_verification_response.json()["users"][0]["emailVerified"], 'status_code': 400 })
 
         # -----------------------
     # Check status of the account in Firestore
@@ -191,12 +191,19 @@ def signin_and_check_email_verification(request):
 
     status = firestore_response.json().get('fields', {}).get('status', {}).get('stringValue')
     localACtype = firestore_response.json().get('fields', {}).get('type', {}).get('stringValue')
+    firstName = firestore_response.json().get('fields', {}).get('firstname', {}).get('stringValue')
+    lastName = firestore_response.json().get('fields', {}).get('lastname', {}).get('stringValue')
+    cohort = firestore_response.json().get('fields', {}).get('cohort', {}).get('stringValue')
     
-    if status != 'Active':
-        return JsonResponse({'error': 'Account is not active.'}, status=400)
+    request.session['country'] = firestore_response.json().get('fields', {}).get('country', {}).get('stringValue')
+    request.session['institute'] = firestore_response.json().get('fields', {}).get('institute', {}).get('stringValue')
 
+    if status != 'Active':
+        return JsonResponse({'message': 'Account is not active. Contact support or teacher.', 'status': 'Inactive', 'status_code': 400})
+
+    
     return JsonResponse({'message': 'Email verified. Account is active.',
-                         'type': localACtype})
+                         'user':{'type': localACtype, 'first_name': firstName, 'last_name': lastName, 'cohort': cohort}, 'status_code':firestore_response.status_code})
 
 @csrf_exempt
 def reset_password(request):
@@ -230,7 +237,7 @@ def reset_password(request):
     if not reset_response.ok:
         return JsonResponse({'error': 'Failed to reset password.'}, status=reset_response.status_code)
 
-    return JsonResponse({'message': 'Password reset email sent.'})
+    return JsonResponse({'message': 'Password reset email sent.', 'status_code':reset_response.status_code})
 
 @csrf_exempt
 def delete_account(request):
@@ -430,7 +437,7 @@ def remove_cohort(request):
     if not firestore_update_response.ok:
         return JsonResponse({'error': 'Failed to update document in Firestore.'}, status=firestore_update_response.status_code)
 
-    return JsonResponse({'message': 'Cohort removed successfully.'})
+    return JsonResponse({'message': 'Cohort removed successfully.', 'status': 'REMOVED'})
 
 @csrf_exempt
 def get_all_cohorts(request):
@@ -488,8 +495,22 @@ def get_all_cohorts(request):
             cohort_count = 0
 
         cohort_counts.append(str(cohort_count))
+        
+    print(existing_cohorts)  
+    print(cohort_counts)  
+    cohorts = ','.join(existing_cohorts).split(',')
+    entries = ','.join(cohort_counts).split(',')
 
-    return JsonResponse({'cohort': ','.join(existing_cohorts), 'entries': ','.join(cohort_counts)})
+    # Initialize an empty list to store transformed entries
+    transformed_entries = []
+
+    # Iterate over the split values and construct dictionaries
+    for cohort, entry in zip(cohorts, entries):
+        transformed_entries.append({"cohort": cohort, "entries": entry})
+    if existing_cohorts == ['']:
+        transformed_entries = []
+    # return JsonResponse({'cohort': ','.join(existing_cohorts), 'entries': ','.join(cohort_counts)})
+    return JsonResponse(transformed_entries, safe=False)
 
 @csrf_exempt
 def suspend_student(request):
@@ -530,7 +551,11 @@ def suspend_student(request):
         )
                 
         if firestore_response.ok:
-            return JsonResponse({'message': 'Successfully suspended student'})
+            if newStatus!="Active":
+                return JsonResponse({'message': 'Successfully suspended student', 'status': 'DEACTIVATED'})
+            else: 
+                return JsonResponse({'message': 'Successfully activated student', 'status': 'ACTIVATED'})
+
         else:
             return JsonResponse({'error': 'Failed to suspend student.'}, status=firestore_response.status_code)
     else:
@@ -643,9 +668,9 @@ def invitation_teacher(request):
             if not email_RESET_response.ok:
                 return JsonResponse({'error': "Failed to send password reset email"})
 
-            return JsonResponse({'message': 'Successfully signed up and sent data : invitation: rest'})
+            return JsonResponse({'message': 'Successfully invited student.', 'status':'SENT'})
         else:
-            return JsonResponse({'error': 'Failed to invite.'}, status=signup_response.status_code)
+            return JsonResponse({'error': 'Invitaion is already sent.', 'status': 'ALREADY_SENT'}, status=signup_response.status_code)
 
 @csrf_exempt
 def get_teacher_cohort(request):
@@ -731,11 +756,12 @@ def get_teacher_cohort(request):
 def get_student_data_country(request):
     try:
         data = json.loads(request.body)
-        country = data.get('country')
         time_filter = data.get('time_filter')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
-    
+        
+    country = request.session.get('country')
+
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
@@ -832,11 +858,11 @@ def get_student_data_country(request):
 def get_student_data_institute(request):
     try:
         data = json.loads(request.body)
-        institute = data.get('institute')
         time_filter = data.get('time_filter')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
-    
+        
+    institute = request.session.get('institute')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
