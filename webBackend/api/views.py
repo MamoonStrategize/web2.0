@@ -177,7 +177,7 @@ def signin_and_check_email_verification(request):
         if not email_verification_response.ok:
             return JsonResponse({'error': 'Failed to send email verification.'}, status=email_verification_response.status_code)
 
-        return JsonResponse({'message': 'Your email is not varified. New varification email sent.','email_verified':check_verification_response.json()["users"][0]["emailVerified"], 'status_code': 400 })
+        return JsonResponse({'message': 'Your email is not varified. New varification email sent.','email_verified':check_verification_response.json()["users"][0]["emailVerified"],'status': 'EMAIL_NOT_VERIFIED', 'status_code': 400 })
 
         # -----------------------
     # Check status of the account in Firestore
@@ -199,7 +199,7 @@ def signin_and_check_email_verification(request):
     request.session['institute'] = firestore_response.json().get('fields', {}).get('institute', {}).get('stringValue')
 
     if status != 'Active':
-        return JsonResponse({'message': 'Account is not active. Contact support or teacher.', 'status': 'Inactive', 'status_code': 400})
+        return JsonResponse({'message': 'Account is not active. Contact support or teacher.', 'status': 'INACTIVE', 'status_code': 400})
 
     
     return JsonResponse({'message': 'Email verified. Account is active.',
