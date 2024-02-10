@@ -132,15 +132,6 @@ def signin_and_check_email_verification(request):
     if not signin_response.ok:
         return JsonResponse({'message': 'Invalid email or password.', 'status': signin_response.json()["error"]["message"], "status_code": signin_response.status_code})
 
-    # Create a new session or get the existing session
-    session_key = request.session.session_key
-    if not session_key:
-        request.session.save()
-
-    # Assign values to the session
-    request.session['user_id_token'] = signin_response.json().get('idToken')
-    request.session['doc_ID'] = signin_response.json().get('localId')
-
     user_id_token = signin_response.json().get('idToken')
     doc_ID = signin_response.json().get('localId')
     
@@ -195,15 +186,15 @@ def signin_and_check_email_verification(request):
     lastName = firestore_response.json().get('fields', {}).get('lastname', {}).get('stringValue')
     cohort = firestore_response.json().get('fields', {}).get('cohort', {}).get('stringValue')
     
-    request.session['country'] = firestore_response.json().get('fields', {}).get('country', {}).get('stringValue')
-    request.session['institute'] = firestore_response.json().get('fields', {}).get('institute', {}).get('stringValue')
+    country = firestore_response.json().get('fields', {}).get('country', {}).get('stringValue')
+    institute = firestore_response.json().get('fields', {}).get('institute', {}).get('stringValue')
 
     if status != 'Active':
         return JsonResponse({'message': 'Account is not active. Contact support or teacher.', 'status': 'INACTIVE', 'status_code': 400})
 
     
     return JsonResponse({'message': 'Email verified. Account is active.',
-                         'user':{'type': localACtype, 'first_name': firstName, 'last_name': lastName, 'cohort': cohort}, 'status_code':firestore_response.status_code})
+                         'user':{'type': localACtype, 'first_name': firstName, 'last_name': lastName, 'cohort': cohort, 'country': country, 'institute':institute, 'token': user_id_token, 'localId': doc_ID }, 'status_code':firestore_response.status_code})
 
 @csrf_exempt
 def reset_password(request):
@@ -247,11 +238,15 @@ def delete_account(request):
     if not (api_key and project_id):
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
 
-    user_id_token = request.session.get('user_id_token')
-    doc_ID = request.session.get('doc_ID')
+    try:
+        data = json.loads(request.body)
+        user_id_token = data.get('idToken')
+        doc_ID = data.get('localId')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
-    if not (user_id_token and doc_ID):
-        return JsonResponse({'error': 'Missing session data.'}, status=400)
+    if not (user_id_token and doc_ID ):
+        return JsonResponse({'error': 'user_id_token or doc_ID missing in request.'}, status=400)
 
     # Delete user account from Firebase Authentication
     auth_delete_data = {
@@ -283,11 +278,14 @@ def add_cohort(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
-    user_id_token = request.session.get('user_id_token')
-    doc_ID = request.session.get('doc_ID')
+    try:
+        data = json.loads(request.body)
+        doc_ID = data.get('localId')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
-    if not (user_id_token and doc_ID):
-        return JsonResponse({'error': 'Missing session data.'}, status=400)
+    if not doc_ID:
+        return JsonResponse({'error': 'doc_ID missing in request.'}, status=400)
 
     api_key = os.environ.get('FIREBASE_API_KEY')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
@@ -384,12 +382,6 @@ def remove_cohort(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST requests are allowed.'}, status=405)
 
-    user_id_token = request.session.get('user_id_token')
-    doc_ID = request.session.get('doc_ID')
-
-    if not (user_id_token and doc_ID):
-        return JsonResponse({'error': 'Missing session data.'}, status=400)
-
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
@@ -398,6 +390,7 @@ def remove_cohort(request):
     try:
         data = json.loads(request.body)
         cohort_to_remove = data.get('cohort_to_remove')
+        doc_ID = data.get('localId')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Cohort to remove not provided.'}, status=400)
 
@@ -441,11 +434,15 @@ def remove_cohort(request):
 
 @csrf_exempt
 def get_all_cohorts(request):
-    doc_ID = request.session.get('doc_ID')
+    try:
+        data = json.loads(request.body)
+        doc_ID = data.get('localId')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
     if not doc_ID:
-        return JsonResponse({'error': 'Missing session data.'}, status=400)
-
+        return JsonResponse({'error': 'doc_ID missing in request.'}, status=400)
+    
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
@@ -565,9 +562,14 @@ def suspend_student(request):
 def invitation_teacher(request):
     api_key = os.environ.get('FIREBASE_API_KEY')
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
-    doc_ID = request.session.get('doc_ID')
-    user_id_token = request.session.get('user_id_token')
+    try:
+        data = json.loads(request.body)
+        doc_ID = data.get('localId')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
+    if not doc_ID:
+        return JsonResponse({'error': 'doc_ID missing in request.'}, status=400)
 
     if not (api_key and project_id):
         return JsonResponse({'error': 'Firebase credentials not configured.'}, status=500)
@@ -760,7 +762,14 @@ def get_student_data_country(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
         
-    country = request.session.get('country')
+    try:
+        data = json.loads(request.body)
+        country = data.get('country')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+
+    if not country:
+        return JsonResponse({'error': 'country missing in request.'}, status=400)
 
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
@@ -862,7 +871,16 @@ def get_student_data_institute(request):
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
         
-    institute = request.session.get('institute')
+    try:
+        data = json.loads(request.body)
+        institute = data.get('institute')
+        doc_ID = data.get('localId')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
+
+    if not institute:
+        return JsonResponse({'error': 'institute missing in request.'}, status=400)
+
     project_id = os.environ.get('FIREBASE_PROJECT_ID')
 
     if not project_id:
