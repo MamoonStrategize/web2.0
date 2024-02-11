@@ -114,7 +114,7 @@ def signin_and_check_email_verification(request):
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
     if not (email and password):
-        return JsonResponse({'error': 'Email or password missing in request.'}, status=400)
+        return JsonResponse({'error': 'Email or password missing in request. Test'}, status=400)
 
     # Sign in user
     signin_data = {
