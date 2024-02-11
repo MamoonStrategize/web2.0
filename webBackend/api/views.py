@@ -3,7 +3,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import requests
 import json
-from django.contrib.sessions.models import Session
 import secrets
 from operator import itemgetter
 from datetime import datetime, timedelta
