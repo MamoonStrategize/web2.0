@@ -1,6 +1,6 @@
 import os
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 import requests
 import json
 from django.contrib.sessions.models import Session
@@ -78,22 +78,24 @@ def signup_and_send_data(request):
             },
             data=json.dumps(firestore_data)
         )
-                
+             
+        if firestore_response.status_code == 200:
         # Data for email verification
-        email_verification_data = {
-            "requestType": "VERIFY_EMAIL",
-            "idToken": signup_response.json().get('idToken')
-        }
+            email_verification_data = {
+                "requestType": "VERIFY_EMAIL",
+                "idToken": signup_response.json().get('idToken')
+            }
 
-        # Make request to email verification API
-        email_verification_response = requests.post(
-            f'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}',
-            headers={'Content-Type': 'application/json'},
-            data=json.dumps(email_verification_data)
-        )
+            # Make request to email verification API
+            email_verification_response = requests.post(
+                f'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}',
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(email_verification_data)
+            )
 
-        return JsonResponse({'message': 'Verification email sent. Please verify your email.', 'status_code': signup_response.status_code })
-
+            return JsonResponse({'message': 'Verification email sent. Please verify your email.', 'status_code': signup_response.status_code })
+        else:
+            return JsonResponse({'message': 'Failed to save data in DB','status': firestore_response.json(), 'status_code': firestore_response.status_code })
     else:
         return JsonResponse({'message': 'Email already exists.', 'status': signup_response.json()["error"]["message"], 'status_code': signup_response.status_code })
 
@@ -178,7 +180,7 @@ def signin_and_check_email_verification(request):
     )
 
     if not firestore_response.ok:
-        return JsonResponse({'error': 'Failed to check account status in Firestore.'}, status=firestore_response.status_code)
+        return JsonResponse({'error': 'Failed to check account status in Firestore.', 'response':firestore_response.json()}, status=firestore_response.status_code)
 
     status = firestore_response.json().get('fields', {}).get('status', {}).get('stringValue')
     localACtype = firestore_response.json().get('fields', {}).get('type', {}).get('stringValue')
@@ -610,34 +612,35 @@ def invitation_teacher(request):
         country = firestore_response_get.json().get('fields', {}).get('country', {}).get('stringValue', '')
 
         # Check if signup was successful
-        if signup_response.status_code == 200:
             # Data for firestore
-            firestore_data = {
-                "fields": {
-                    "firstname": {"stringValue": firstname},
-                    "lastname": {"stringValue": lastname},
-                    "email": {"stringValue": email},
-                    "institute": {"stringValue": institute},
-                    "country": {"stringValue": country},
-                    "cohort": {"stringValue": cohort},
-                    "status": {"stringValue": "Active"},
-                    "type": {"stringValue": "student"},
-                    "tracks": {"integerValue": 0},
-                    "marketCap": {"integerValue": 0}
-                }
+        firestore_data = {
+            "fields": {
+                "firstname": {"stringValue": firstname},
+                "lastname": {"stringValue": lastname},
+                "email": {"stringValue": email},
+                "institute": {"stringValue": institute},
+                "country": {"stringValue": country},
+                "cohort": {"stringValue": cohort},
+                "status": {"stringValue": "Active"},
+                "type": {"stringValue": "student"},
+                "tracks": {"integerValue": 0},
+                "marketCap": {"integerValue": 0}
             }
+        }
 
-            # Make request to Firestore API
-            std_doc_ID = signup_response.json().get('localId')
-            firestore_response = requests.post(
-                f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser?documentId={std_doc_ID}',
-                headers={
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer {}'.format(signup_response.json().get('idToken'))
-                },
-                data=json.dumps(firestore_data)
-            )
-                    
+        # Make request to Firestore API
+        std_doc_ID = signup_response.json().get('localId')
+        firestore_response = requests.post(
+            f'https://firestore.googleapis.com/v1/projects/{project_id}/databases/(default)/documents/regUser?documentId={std_doc_ID}',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer {}'.format(signup_response.json().get('idToken'))
+            },
+            data=json.dumps(firestore_data)
+        )
+        
+        if signup_response.status_code == 200:
+    
             # Data for email verification
             email_verification_data = {
                 "requestType": "VERIFY_EMAIL",
@@ -669,7 +672,7 @@ def invitation_teacher(request):
             )
             if not email_RESET_response.ok:
                 return JsonResponse({'error': "Failed to send password reset email"})
-
+                
             return JsonResponse({'message': 'Successfully invited student.', 'status':'SENT'})
         else:
             return JsonResponse({'error': 'Invitaion is already sent.', 'status': 'ALREADY_SENT'}, status=signup_response.status_code)
@@ -705,6 +708,10 @@ def get_teacher_cohort(request):
         headers={'Content-Type': 'application/json'},
         json=firestore_update_data
     )
+
+    if not any('document' in item for item in firestore_query_response.json()):
+        sorted_data = []
+        return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
 
     # Check the type of the response
     if firestore_query_response.status_code != 200:
@@ -1104,9 +1111,15 @@ def get_student_data_cohort(request):
         json=firestore_update_data
     )
 
+
+    # return HttpResponse(firestore_query_response.status_code)
     # Check the type of the response
     if firestore_query_response.status_code != 200:
         return JsonResponse({'error': f'Failed to retrieve student data: {firestore_query_response.text}'}, status=firestore_query_response.status_code)
+
+    if not any('document' in item for item in firestore_query_response.json()):
+        sorted_data = []
+        return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
 
     # Assuming the response is JSON, you can parse it as follows
     response_data = firestore_query_response.json()
@@ -1155,4 +1168,5 @@ def get_student_data_cohort(request):
             transformed_data.append(transformed_item)
     sorted_data = sorted(transformed_data, key=itemgetter('marketCap'), reverse=True)
     return JsonResponse(sorted_data, safe=False)  # Return the processed data as a JSON response
+
 
