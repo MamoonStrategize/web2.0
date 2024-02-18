@@ -495,8 +495,6 @@ def get_all_cohorts(request):
 
         cohort_counts.append(str(cohort_count))
         
-    print(existing_cohorts)  
-    print(cohort_counts)  
     cohorts = ','.join(existing_cohorts).split(',')
     entries = ','.join(cohort_counts).split(',')
 
@@ -535,7 +533,6 @@ def suspend_student(request):
         # Handle response from Firestore API
     if firestore_response_get.ok:
         # Extract existing data and update status
-        print(firestore_response_get.json())
         existing_data = firestore_response_get.json().get('fields', {})
         existing_data['status'] = {'stringValue': newStatus}
 
@@ -796,8 +793,6 @@ def get_student_data_country(request):
 
     # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
     start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-    print(start_date)
-    print(start_date_iso)
 
     firestore_update_data = {
         "structuredQuery": {
@@ -906,8 +901,6 @@ def get_student_data_institute(request):
 
     # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
     start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-    print(start_date)
-    print(start_date_iso)
 
     firestore_update_data = {
         "structuredQuery": {
@@ -1005,8 +998,6 @@ def get_student_data_international(request):
 
     # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
     start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-    print(start_date)
-    print(start_date_iso)
 
 
     firestore_query_response = requests.get(
@@ -1089,8 +1080,6 @@ def get_student_data_cohort(request):
 
     # Format the start date as an ISO 8601 string with 'Z' indicating UTC timezone
     start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-    print(start_date)
-    print(start_date_iso)
 
     firestore_update_data = {
         "structuredQuery": {
