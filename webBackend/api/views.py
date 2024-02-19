@@ -31,6 +31,7 @@ def signup_and_send_data(request):
         acType = data.get('acType')
         tracks = 0
         marketCap = 0
+        licenses = 0
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
@@ -65,6 +66,7 @@ def signup_and_send_data(request):
                 "type": {"stringValue": acType},
                 "tracks": {"integerValue": tracks},
                 "marketCap": {"integerValue": marketCap}
+                "licenses": {"integerValue": licenses}
             }
         }
 
