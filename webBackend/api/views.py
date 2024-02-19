@@ -32,6 +32,7 @@ def signup_and_send_data(request):
         tracks = 0
         marketCap = 0
         licenses = 0
+        pStatus = 'free'
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON format in request body.'}, status=400)
 
@@ -66,7 +67,8 @@ def signup_and_send_data(request):
                 "type": {"stringValue": acType},
                 "tracks": {"integerValue": tracks},
                 "marketCap": {"integerValue": marketCap},
-                "licenses": {"integerValue": licenses}
+                "licenses": {"integerValue": licenses},
+                "pStatus": {"integerValue": pStatus}
             }
         }
 
@@ -190,6 +192,7 @@ def signin_and_check_email_verification(request):
     lastName = firestore_response.json().get('fields', {}).get('lastname', {}).get('stringValue')
     cohort = firestore_response.json().get('fields', {}).get('cohort', {}).get('stringValue')
     licenses = firestore_response.json().get('fields', {}).get('licenses', {}).get('stringValue')
+    pStatus = firestore_response.json().get('fields', {}).get('pStatus', {}).get('stringValue')
     
     country = firestore_response.json().get('fields', {}).get('country', {}).get('stringValue')
     institute = firestore_response.json().get('fields', {}).get('institute', {}).get('stringValue')
@@ -199,7 +202,7 @@ def signin_and_check_email_verification(request):
 
     
     return JsonResponse({'message': 'Email verified. Account is active.',
-                         'user':{'type': localACtype, 'first_name': firstName, 'last_name': lastName, 'cohort': cohort, 'country': country, 'institute':institute, 'token': user_id_token, 'localId': doc_ID, 'licenses': licenses }, 'status_code':firestore_response.status_code})
+                         'user':{'type': localACtype, 'first_name': firstName, 'last_name': lastName, 'cohort': cohort, 'country': country, 'institute':institute, 'token': user_id_token, 'localId': doc_ID, 'licenses': licenses, 'pStatus': pStatus}, 'status_code':firestore_response.status_code})
 
 @csrf_exempt
 def reset_password(request):
